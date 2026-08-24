@@ -8,7 +8,7 @@ from .engine import AGENT_PERSONAS, generate_agent_argument, generate_fallacy_ch
 
 class ScenariosListView(APIView):
     def get(self, request):
-        scenarios = DebateScenario.objects.all()
+        scenarios = DebateScenario.objects.exclude(category='Custom Topic')
         data = []
         for s in scenarios:
             data.append({
@@ -26,18 +26,47 @@ class StartDebateView(APIView):
         if not user:
             user = User.objects.first()
 
+        custom_topic = request.data.get('custom_topic')
         scenario_id = request.data.get('scenario_id')
-        try:
-            scenario = DebateScenario.objects.get(id=scenario_id)
-        except DebateScenario.DoesNotExist:
-            scenario = DebateScenario.objects.first()
-            if not scenario:
-                scenario = DebateScenario.objects.create(
-                    title="Direct Benefit Transfer Survey Redesign: Continuous Digital Capture vs 5-Year Sample",
-                    category="Data Policy",
-                    description="Debate on replacing traditional periodic paper sample surveys with real-time digital household microdata capture across rural and urban blocks.",
-                    initial_constraint="Standard 2026 MoSPI Operational Budget"
+        if custom_topic is not None:
+            if not isinstance(custom_topic, str):
+                return Response(
+                    {'error': 'Custom topic must be text.'},
+                    status=status.HTTP_400_BAD_REQUEST
                 )
+
+            custom_topic = ' '.join(custom_topic.split())
+            if not custom_topic:
+                return Response(
+                    {'error': 'Enter a custom debate topic.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            if len(custom_topic) > 255:
+                return Response(
+                    {'error': 'Custom debate topic must be 255 characters or fewer.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            scenario = DebateScenario.objects.create(
+                title=custom_topic,
+                category='Custom Topic',
+                description='A user-created topic for multi-agent policy deliberation.',
+                initial_constraint='Open deliberation with no preset constraint.',
+                status='Draft',
+                learning_objective='Evaluate competing perspectives and synthesize a balanced recommendation.'
+            )
+        else:
+            try:
+                scenario = DebateScenario.objects.get(id=scenario_id)
+            except (DebateScenario.DoesNotExist, TypeError, ValueError):
+                scenario = DebateScenario.objects.exclude(category='Custom Topic').first()
+                if not scenario:
+                    scenario = DebateScenario.objects.create(
+                        title="Direct Benefit Transfer Survey Redesign: Continuous Digital Capture vs 5-Year Sample",
+                        category="Data Policy",
+                        description="Debate on replacing traditional periodic paper sample surveys with real-time digital household microdata capture across rural and urban blocks.",
+                        initial_constraint="Standard 2026 MoSPI Operational Budget"
+                    )
 
         session = DebateSession.objects.create(
             user=user,

@@ -57,6 +57,21 @@ function courseUrl(identifier: string) {
   return `https://portal.igotkarmayogi.gov.in/app/toc/${encodeURIComponent(identifier)}/overview`;
 }
 
+function normalizeIgotImageUrl(imageUrl: string) {
+  if (!imageUrl) return '';
+
+  try {
+    const sourceUrl = new URL(imageUrl);
+    const contentPath = sourceUrl.pathname
+      .replace(/^\/igotprod\//, '/content-store/')
+      .replace(/^\/content-store\/+/, '/content-store/');
+
+    return `https://portal.igotkarmayogi.gov.in${contentPath}${sourceUrl.search}`;
+  } catch {
+    return '';
+  }
+}
+
 async function fetchCourseCatalog() {
   const response = await fetch('/data/igot-courses.json');
   if (!response.ok) throw new Error(`Catalog request failed (${response.status})`);
@@ -68,10 +83,11 @@ async function fetchCourseCatalog() {
 }
 
 function CourseImage({ course }: { course: IgotCourse }) {
-  const initialSource = course.appIcon || course.posterImage;
-  const [imageSource, setImageSource] = useState(initialSource);
+  const imageSource = normalizeIgotImageUrl(course.posterImage);
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const [imageFailed, setImageFailed] = useState(false);
 
-  if (!imageSource) {
+  if (!imageSource || imageFailed) {
     return (
       <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-emerald-50 to-slate-100 text-emerald-700">
         <BookOpen className="h-9 w-9" aria-hidden="true" />
@@ -80,25 +96,34 @@ function CourseImage({ course }: { course: IgotCourse }) {
   }
 
   return (
-    // The official catalog uses several image hosts, so a native image keeps every source usable.
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={imageSource}
-      alt=""
-      loading="lazy"
-      className="h-full w-full object-cover"
-      onError={() => {
-        if (imageSource !== course.posterImage && course.posterImage) {
-          setImageSource(course.posterImage);
-        } else {
-          setImageSource('');
-        }
-      }}
-    />
+    <div className="relative h-full w-full bg-gradient-to-br from-emerald-50 to-slate-100">
+      {!imageLoaded && (
+        <div className="absolute inset-0 flex animate-pulse items-center justify-center text-emerald-700/60">
+          <BookOpen className="h-8 w-8" aria-hidden="true" />
+        </div>
+      )}
+      {/* The source catalog spans legacy hosts; native img uses the normalized iGOT content store. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={imageSource}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-200 ${
+          imageLoaded ? 'opacity-100' : 'opacity-0'
+        }`}
+        onLoad={() => setImageLoaded(true)}
+        onError={() => setImageFailed(true)}
+      />
+    </div>
   );
 }
 
 function CourseCard({ course }: { course: IgotCourse }) {
+  const [descriptionExpanded, setDescriptionExpanded] = useState(false);
+  const hasLongDescription = course.description.trim().length > 180;
+  const descriptionId = `course-description-${course.identifier}`;
+
   return (
     <article className="card-supa-light flex h-full flex-col overflow-hidden shadow-xs transition-all hover:-translate-y-0.5 hover:border-[#c7c7c7] hover:shadow-md">
       <div className="relative h-36 overflow-hidden border-b border-[#ededed] bg-[#f6f7f7]">
@@ -126,7 +151,27 @@ function CourseCard({ course }: { course: IgotCourse }) {
           <span>{course.source || 'iGOT Karmayogi'}</span>
         </p>
 
-        <p className="mt-3 flex-1 text-xs leading-relaxed text-[#707070]">{course.description}</p>
+        <div className="mt-3 flex-1">
+          <p
+            id={descriptionId}
+            className={`text-xs leading-relaxed text-[#707070] ${
+              hasLongDescription && !descriptionExpanded ? 'line-clamp-4' : ''
+            }`}
+          >
+            {course.description}
+          </p>
+          {hasLongDescription && (
+            <button
+              type="button"
+              onClick={() => setDescriptionExpanded((expanded) => !expanded)}
+              aria-expanded={descriptionExpanded}
+              aria-controls={descriptionId}
+              className="mt-2 text-xs font-semibold text-emerald-700 hover:text-emerald-800 hover:underline"
+            >
+              {descriptionExpanded ? 'View less' : 'View more'}
+            </button>
+          )}
+        </div>
 
         <div className="mt-5 border-t border-[#ededed] pt-4">
           <a

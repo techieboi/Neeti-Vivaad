@@ -3,14 +3,42 @@
 import React, { useState, useEffect } from 'react';
 import { 
   MessageSquare, Play, Sparkles, Scale, Shield, AlertTriangle, 
-  ChevronRight, ChevronDown, CheckCircle2, Award, Zap, HelpCircle, Layers, RefreshCw
+  ChevronRight, ChevronDown, CheckCircle2, Award, Zap, HelpCircle, Layers, RefreshCw, LoaderCircle
 } from 'lucide-react';
+import AIProcessingState from '../components/AIProcessingState';
+
+type DebateLoadingOperation = 'launch' | 'round' | 'constraint';
+
+const debateLoadingCopy: Record<DebateLoadingOperation, {
+  title: string;
+  description: string;
+  stages: string[];
+}> = {
+  launch: {
+    title: 'Orchestrating the debate arena',
+    description: 'Four policy personas are researching the topic and preparing grounded opening positions.',
+    stages: ['Retrieving evidence', 'Generating arguments', 'Checking citations'],
+  },
+  round: {
+    title: 'Synthesizing the next round',
+    description: 'The agents are reviewing earlier claims and generating their next evidence-backed responses.',
+    stages: ['Reviewing prior claims', 'Generating responses', 'Moderating the round'],
+  },
+  constraint: {
+    title: 'Recalculating under the new constraint',
+    description: 'Each policy persona is adapting its position to the what-if scenario you introduced.',
+    stages: ['Applying constraint', 'Regenerating positions', 'Checking consistency'],
+  },
+};
 
 export default function DebateStudio() {
   const [scenarios, setScenarios] = useState<any[]>([]);
   const [selectedScenarioId, setSelectedScenarioId] = useState<number | null>(null);
+  const [topicMode, setTopicMode] = useState<'scenario' | 'custom'>('scenario');
+  const [customTopic, setCustomTopic] = useState('');
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingOperation, setLoadingOperation] = useState<DebateLoadingOperation | null>(null);
   const [whatIfInput, setWhatIfInput] = useState('');
   const [showWhatIfModal, setShowWhatIfModal] = useState(false);
   const [showJudgmentTree, setShowJudgmentTree] = useState(false);
@@ -60,6 +88,14 @@ export default function DebateStudio() {
   }, []);
 
   const handleStartDebate = async () => {
+    const normalizedCustomTopic = customTopic.trim();
+    if (topicMode === 'custom' && !normalizedCustomTopic) return;
+
+    const requestBody = topicMode === 'custom'
+      ? { custom_topic: normalizedCustomTopic }
+      : { scenario_id: selectedScenarioId };
+
+    setLoadingOperation('launch');
     setLoading(true);
     setFallacyAnswered(false);
     setFallacyResult(null);
@@ -67,14 +103,14 @@ export default function DebateStudio() {
       let res = await fetch('/api/debate/start/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scenario_id: selectedScenarioId })
+        body: JSON.stringify(requestBody)
       }).catch(() => null);
 
       if (!res || !res.ok) {
         res = await fetch('http://127.0.0.1:8000/api/debate/start/', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ scenario_id: selectedScenarioId })
+          body: JSON.stringify(requestBody)
         }).catch(() => null);
       }
 
@@ -86,10 +122,14 @@ export default function DebateStudio() {
         setSession({
           session_id: 1,
           scenario_id: selectedScenarioId,
-          scenario_title: scenarios.find(s => s.id === selectedScenarioId)?.title || 'DBT Survey Redesign',
+          scenario_title: topicMode === 'custom'
+            ? normalizedCustomTopic
+            : scenarios.find(s => s.id === selectedScenarioId)?.title || 'DBT Survey Redesign',
           current_round: 1,
           round_name: 'Opening Policy Statements & Initial Trade-Offs',
-          active_constraint: 'Standard 2026 MoSPI Operational Budget',
+          active_constraint: topicMode === 'custom'
+            ? 'Open deliberation with no preset constraint.'
+            : scenarios.find(s => s.id === selectedScenarioId)?.initial_constraint || 'Standard 2026 MoSPI Operational Budget',
           arguments: [
             {
               id: 1,
@@ -139,11 +179,13 @@ export default function DebateStudio() {
       // Fallback handled
     } finally {
       setLoading(false);
+      setLoadingOperation(null);
     }
   };
 
   const handleNextRound = async () => {
     if (!session) return;
+    setLoadingOperation('round');
     setLoading(true);
     setFallacyAnswered(false);
     setFallacyResult(null);
@@ -201,11 +243,13 @@ export default function DebateStudio() {
       // Fallback
     } finally {
       setLoading(false);
+      setLoadingOperation(null);
     }
   };
 
   const handleInjectConstraint = async () => {
     if (!session || !whatIfInput.trim()) return;
+    setLoadingOperation('constraint');
     setLoading(true);
     setShowWhatIfModal(false);
     try {
@@ -249,6 +293,7 @@ export default function DebateStudio() {
     } finally {
       setWhatIfInput('');
       setLoading(false);
+      setLoadingOperation(null);
     }
   };
 
@@ -341,18 +386,22 @@ export default function DebateStudio() {
         <div className="card-supa-light p-6 space-y-6 shadow-sm max-w-3xl mx-auto">
           <div className="border-b border-[#ededed] pb-3">
             <h2 className="text-base font-semibold text-[#171717] flex items-center gap-2">
-              <MessageSquare className="w-4 h-4 text-[#24b47e]" /> Select Policy Debate Scenario
+              <MessageSquare className="w-4 h-4 text-[#24b47e]" /> Choose Your Debate Topic
             </h2>
-            <p className="text-xs text-[#707070] mt-0.5">Select a grounded government simulation scenario to launch multi-agent deliberations</p>
+            <p className="text-xs text-[#707070] mt-0.5">Select a grounded government scenario or enter a topic of your own</p>
           </div>
 
           <div className="space-y-4">
             {scenarios.map((sc) => (
-              <div
+              <button
+                type="button"
                 key={sc.id}
-                onClick={() => setSelectedScenarioId(sc.id)}
-                className={`p-5 rounded-[8px] border cursor-pointer transition-all ${
-                  selectedScenarioId === sc.id
+                onClick={() => {
+                  setSelectedScenarioId(sc.id);
+                  setTopicMode('scenario');
+                }}
+                className={`w-full p-5 rounded-[8px] border cursor-pointer text-left transition-all ${
+                  topicMode === 'scenario' && selectedScenarioId === sc.id
                     ? 'border-[#3ecf8e] bg-emerald-50/40 ring-2 ring-[#3ecf8e]/20 shadow-xs'
                     : 'border-[#dfdfdf] bg-[#fafafa] hover:border-[#171717]'
                 }`}
@@ -365,17 +414,54 @@ export default function DebateStudio() {
                 </div>
                 <h3 className="font-semibold text-[#171717] text-sm mb-1">{sc.title}</h3>
                 <p className="text-xs text-[#707070] leading-relaxed font-normal">{sc.description}</p>
-              </div>
+              </button>
             ))}
+
+            <div
+              className={`p-5 rounded-[8px] border transition-all ${
+                topicMode === 'custom'
+                  ? 'border-[#3ecf8e] bg-emerald-50/40 ring-2 ring-[#3ecf8e]/20 shadow-xs'
+                  : 'border-dashed border-[#bdbdbd] bg-white'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-4 mb-2">
+                <label htmlFor="custom-debate-topic" className="font-semibold text-[#171717] text-sm">
+                  Enter a custom debate topic
+                </label>
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-white border border-[#dfdfdf] text-[#171717] font-medium">
+                  Custom
+                </span>
+              </div>
+              <textarea
+                id="custom-debate-topic"
+                value={customTopic}
+                onFocus={() => setTopicMode('custom')}
+                onChange={(event) => {
+                  setCustomTopic(event.target.value);
+                  setTopicMode('custom');
+                }}
+                maxLength={255}
+                rows={3}
+                placeholder="Example: Should government agencies use AI to make public-benefit eligibility decisions?"
+                className="w-full resize-none rounded-[6px] border border-[#d7d7d7] bg-white px-3 py-2.5 text-sm text-[#171717] outline-none transition-colors placeholder:text-[#9a9a9a] focus:border-[#24b47e] focus:ring-2 focus:ring-[#3ecf8e]/15"
+              />
+              <div className="mt-1.5 flex items-center justify-between gap-4 text-[10px] font-mono text-[#707070]">
+                <span>The four agents will research and debate this exact topic.</span>
+                <span>{customTopic.length}/255</span>
+              </div>
+            </div>
           </div>
 
           <button
             onClick={handleStartDebate}
-            disabled={loading}
-            className="btn-primary-green w-full py-3 text-xs flex items-center justify-center gap-2 font-semibold"
+            disabled={loading || (topicMode === 'custom' ? !customTopic.trim() : selectedScenarioId === null)}
+            className="btn-primary-green w-full py-3 text-xs flex items-center justify-center gap-2 font-semibold disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading ? (
-              <span>Orchestrating Multi-Agent Debate Arena...</span>
+              <>
+                <LoaderCircle className="h-4 w-4 animate-spin motion-reduce:animate-none" />
+                <span>Generating opening arguments…</span>
+              </>
             ) : (
               <>
                 <Play className="w-4 h-4" />
@@ -383,16 +469,30 @@ export default function DebateStudio() {
               </>
             )}
           </button>
+
+          {loading && loadingOperation && (
+            <AIProcessingState {...debateLoadingCopy[loadingOperation]} />
+          )}
         </div>
       ) : (
         /* Active Debate Arena View */
         <div className="space-y-8">
+
+          {loading && loadingOperation && (
+            <AIProcessingState {...debateLoadingCopy[loadingOperation]} />
+          )}
           
           {/* Active Constraints Banner */}
-          <div className="p-4 rounded-[8px] bg-emerald-50/60 border border-emerald-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs font-mono">
-            <div className="flex items-center gap-2">
-              <span className="text-emerald-800 font-bold uppercase tracking-wider">Active Constraint:</span>
-              <span className="text-[#171717]">{session.active_constraint || 'Standard MoSPI Guidelines'}</span>
+          <div className="p-4 rounded-[8px] bg-emerald-50/60 border border-emerald-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs font-mono">
+            <div className="space-y-1.5">
+              <div className="flex items-start gap-2">
+                <span className="text-emerald-800 font-bold uppercase tracking-wider shrink-0">Debate Topic:</span>
+                <span className="text-[#171717]">{session.scenario_title}</span>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="text-emerald-800 font-bold uppercase tracking-wider shrink-0">Active Constraint:</span>
+                <span className="text-[#171717]">{session.active_constraint || 'Standard MoSPI Guidelines'}</span>
+              </div>
             </div>
             <span className="px-3 py-1 rounded-full bg-white border border-emerald-300 text-emerald-800 font-bold">
               Round {session.current_round} / 4: {session.round_name}
@@ -482,7 +582,12 @@ export default function DebateStudio() {
               disabled={loading}
               className="btn-primary-green w-full py-3 text-xs flex items-center justify-center gap-2 font-semibold"
             >
-              {loading ? 'Synthesizing Next Round Arguments...' : `Advance to Round ${session.current_round + 1}`}
+              {loading ? (
+                <>
+                  <LoaderCircle className="h-4 w-4 animate-spin motion-reduce:animate-none" />
+                  {loadingOperation === 'constraint' ? 'Adapting agent positions…' : 'Generating next round…'}
+                </>
+              ) : `Advance to Round ${session.current_round + 1}`}
             </button>
           ) : (
             <div className="card-supa-light p-6 text-center space-y-3 bg-emerald-50/50 border-emerald-300">

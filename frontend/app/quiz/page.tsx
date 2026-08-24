@@ -6,10 +6,12 @@ import {
   BookOpen,
   CheckCircle2,
   FileText,
+  LoaderCircle,
   Sparkles,
   Upload,
   XCircle,
 } from 'lucide-react';
+import AIProcessingState from '../components/AIProcessingState';
 
 type QuizOption = {
   id: number;
@@ -64,6 +66,7 @@ export default function QuizStudio() {
   const [userAnswers, setUserAnswers] = useState<Record<number, number>>({});
   const [quizResult, setQuizResult] = useState<QuizResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingContext, setLoadingContext] = useState<'source' | 'regenerate'>('source');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -88,6 +91,7 @@ export default function QuizStudio() {
       return;
     }
 
+    setLoadingContext('source');
     setLoading(true);
     setError('');
     setQuiz(null);
@@ -144,6 +148,7 @@ export default function QuizStudio() {
 
   const regenerateQuiz = async () => {
     if (!documentId) return;
+    setLoadingContext('regenerate');
     setLoading(true);
     setError('');
     try {
@@ -277,7 +282,11 @@ export default function QuizStudio() {
             disabled={loading}
             className="btn-primary-green w-full py-2.5 text-xs flex items-center justify-center gap-2 disabled:opacity-60"
           >
-            <Sparkles className="w-3.5 h-3.5" />
+            {loading ? (
+              <LoaderCircle className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />
+            ) : (
+              <Sparkles className="w-3.5 h-3.5" />
+            )}
             {loading ? 'Reading source and generating questions…' : 'Generate quiz from source'}
           </button>
         </div>
@@ -316,8 +325,14 @@ export default function QuizStudio() {
           )}
 
           {loading && (
-            <div className="text-center py-20 text-[#24b47e] font-mono text-xs">
-              Extracting text, generating questions, and verifying citations…
+            <div className="py-8">
+              <AIProcessingState
+                title="Building your source-grounded quiz"
+                description="The model is turning your document into a fresh assessment. This can take a few moments."
+                stages={loadingContext === 'regenerate'
+                  ? ['Reading saved source', 'Generating new questions', 'Verifying citations']
+                  : ['Preparing source text', 'Generating questions', 'Verifying citations']}
+              />
             </div>
           )}
 
@@ -392,6 +407,9 @@ export default function QuizStudio() {
                   disabled={submitting}
                   className="btn-primary-green w-full py-2.5 text-xs font-semibold disabled:opacity-60"
                 >
+                  {submitting && (
+                    <LoaderCircle className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />
+                  )}
                   {submitting ? 'Evaluating answers…' : 'Submit assessment'}
                 </button>
               ) : (

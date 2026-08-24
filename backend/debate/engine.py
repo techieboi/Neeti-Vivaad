@@ -1,5 +1,4 @@
-from django.conf import settings
-from neeti_vivaad.ai import AIServiceError, generate_text
+from neeti_vivaad.ai import AIServiceError, generate_text, has_api_key
 from .mospi_rag import MoSPIRAGStore
 from .models import DebateSession, DebateRound, AgentArgument, DecisionReport, FallacyChallenge
 
@@ -52,7 +51,7 @@ CRITICAL MANDATE:
 
 Generate your response as plain text argument."""
 
-    if getattr(settings, "NVIDIA_API_KEY", "").strip():
+    if has_api_key():
         try:
             argument = generate_text(prompt, temperature=0.35, max_tokens=400)
             return argument, f"Grounded in [{doc_code}]: {doc_title}", doc_code
